@@ -14,7 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, BankAccount, Driver, Client, Vehicle, Bus, Location, Station, Route, VehicalRoute, RegisterTrip, VehicleTicket
 from .serializers import UserSerializer, BankAccountSerializer, DriverSerializer, ClientSerializer, VehicleSerializer, BusSerializer, LocationSerializer, StationSerializer, RouteSerializer, VehicalRouteSerializer, RegisterTripSerializer, VehicleTicketSerializer
 from django.core.files.storage import default_storage
-
+from .sendemail import send_email
 @method_decorator(csrf_exempt, name='dispatch')
 class UserView(View):
     def get(self, request):
@@ -98,7 +98,11 @@ logger = logging.getLogger(__name__)
 @method_decorator(csrf_exempt, name='dispatch')
 class ClientView(View):
     def get(self, request):
-        clients = Client.objects.all()
+        username = request.GET.get('username')
+        if username:
+            clients = Client.objects.filter(username=username)
+        else:
+            clients = Client.objects.all()
         serializer = ClientSerializer(clients, many=True)
         return JsonResponse(serializer.data, safe=False)
 
@@ -110,6 +114,7 @@ class ClientView(View):
             if 'avatar' in files:
                 data['avatar'] = files['avatar']
 
+            print(f"Data sent to serializer: {data}")
             # Tạo đối tượng User
             username = data.get('username')
             password = data.get('password')
@@ -125,6 +130,7 @@ class ClientView(View):
 
             # Tạo đối tượng Client với dữ liệu từ serializer
             serializer = ClientSerializer(data=data)
+            print(serializer)
             if serializer.is_valid():
                 serializer.save(user=user)  # Liên kết đối tượng User với Client
                 return JsonResponse(serializer.data, status=201)
@@ -148,7 +154,47 @@ class ClientView(View):
         user = User.objects.get(id=id)
         user.delete()
         return JsonResponse("Deleted Successfully!!", safe=False)
+@method_decorator(csrf_exempt, name='dispatch')
+class ClientSignUpView(APIView):
+    def post(self, request):
+        try:
+            data = request.data.copy()  # Handle JSON and form data consistently
+            files = request.FILES
+            if 'avatar' in files:
+                data['avatar'] = files['avatar']
 
+            # Log the data being sent to the serializer
+            logger.info(f"Data sent to serializer: {data}")
+            print(data)
+
+            # Extract username and password from data
+            username = data.get('username')
+            password = data.get('password')
+            if not username or not password:
+                return JsonResponse({'error': 'Username and password are required'}, status=400)
+
+            # Check if the username already exists
+            if Client.objects.filter(username=username).exists():
+                return JsonResponse({'error': 'Username already exists'}, status=400)
+
+            # Create a ClientSerializer instance with the data
+            serializer = ClientSerializer(data=data)
+            if serializer.is_valid():
+                # Create a new Client object with hashed password
+                user = serializer.save()
+                user.set_password(password)  # Hash the password
+                user.save()
+                return JsonResponse(serializer.data, status=201)
+            else:
+                # Log the serializer errors
+                logger.error(f"Serializer errors: {serializer.errors}")
+                return JsonResponse(serializer.errors, status=400)
+        except ParseError as e:
+            logger.error(f"Parse error in POST: {e}")
+            return JsonResponse({'error': 'JSON parse error'}, status=400)
+        except Exception as e:
+            logger.error(f"Unexpected error in POST: {e}")
+            return JsonResponse({'error': 'Internal server error'}, status=500)
 @method_decorator(csrf_exempt, name='dispatch')
 class ClientLoginView(APIView):
      def post(self, request):
@@ -186,6 +232,24 @@ class ClientLoginView(APIView):
                 return JsonResponse({'error': 'Invalid username or password'}, status=400)
         except Exception as e:
             logger.error(f"Unexpected error in login: {e}")
+            return JsonResponse({'error': 'Internal server error'}, status=500)
+@method_decorator(csrf_exempt, name='dispatch')
+class RequestRegistryView(APIView):
+     def post(self, request):
+        try:
+            from_address_trip = request.data.get('from')
+            to_address_trip = request.data.get('to')
+            time_string = request.data.get('time')
+
+            if not from_address_trip or not to_address_trip or not time_string:
+                return JsonResponse({'error': 'From address, to address, and time are required'}, status=400)
+
+            # Call the send_email function
+            send_email(from_address_trip, to_address_trip, time_string)
+
+            return JsonResponse({'message': 'Email sent successfully'}, status=200)
+        except Exception as e:
+            logger.error(f"Unexpected error in sending email: {e}")
             return JsonResponse({'error': 'Internal server error'}, status=500)
 @method_decorator(csrf_exempt, name='dispatch')
 class VehicleView(View):

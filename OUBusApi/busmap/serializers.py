@@ -19,7 +19,20 @@ class DriverSerializer(serializers.ModelSerializer):
 class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
-        fields = ['id', 'username', 'email','first_name','last_name' ,'avatar']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'avatar']
+        extra_kwargs = {
+            'username': {'required': True},
+            'email': {'required': False},
+            'first_name': {'required': False},
+            'last_name': {'required': False},
+            'avatar': {'required': False, 'allow_null': True}
+        }
+
+    def create(self, validated_data):
+        # Create and return the Client instance without password handling
+        client = Client(**validated_data)
+        client.save()
+        return client
 
 class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
